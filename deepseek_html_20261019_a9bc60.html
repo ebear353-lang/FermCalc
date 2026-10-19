@@ -1,0 +1,1343 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Конфигуратор планов</title>
+<style>
+  /* ================= БАЗА ================= */
+  body {
+    font-family: Arial, sans-serif;
+    margin: 0 auto;
+    padding: 20px;
+    max-width: 1160px;
+    color: #ffe8d0;
+    background: #1a0d06;
+    background-image:
+      radial-gradient(circle at 20% 0%, rgba(255,120,0,0.15), transparent 50%),
+      radial-gradient(circle at 80% 100%, rgba(255,40,0,0.15), transparent 50%);
+    background-attachment: fixed;
+  }
+
+  h1 { font-size: 22px; color: #ffb347; margin-bottom: 4px; }
+  h2 { font-size: 16px; margin-top: 20px; color: #ffb347; }
+
+  .panel {
+    background: #2a1408; border: 1px solid #5a2a10; padding: 12px;
+    margin-top: 16px; font-size: 14px; box-shadow: 0 0 15px rgba(255,80,0,0.15);
+    border-radius: 6px;
+  }
+  .panel h2 { margin: 0 0 10px 0; }
+
+  button {
+    padding: 8px 14px; font-size: 14px; cursor: pointer; margin-top: 10px;
+    background: #3d1a08; color: #ffb347; border: 1px solid #7a3a10; border-radius: 4px;
+    transition: all 0.15s;
+  }
+  button:hover { background: #5a2a10; color: #ffd9a0; box-shadow: 0 0 10px rgba(255,94,0,0.5); }
+  button.calc {
+    background: linear-gradient(180deg, #ff8c00, #ff4500);
+    color: #fff; border: none; padding: 10px 20px; font-size: 15px; font-weight: bold;
+    box-shadow: 0 0 15px rgba(255,94,0,0.6);
+  }
+  button.calc:hover { background: linear-gradient(180deg, #ffa030, #ff5500); }
+  button.del { padding: 2px 8px; background: #7a1a00; color: #fff; border: none; margin: 0; }
+  button.del:hover { background: #b32a00; }
+  
+  button.active-mode {
+    background: linear-gradient(180deg, #0275d8, #0056b3);
+    color: #fff; border: none; box-shadow: 0 0 15px rgba(2,117,216,0.6);
+  }
+
+  input[type="text"], input[type="number"] {
+    box-sizing: border-box; padding: 4px; font-size: 14px;
+    background: #1a0d06; color: #ffe8d0; border: 1px solid #5a2a10; border-radius: 3px;
+  }
+
+  .stock-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .stock-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #1a0d06;
+    padding: 6px 10px;
+    border: 1px solid #5a2a10;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+  .stock-item span { color: #cc8a5a; }
+  .stock-item input { width: 60px; text-align: center; }
+  .stock-item .del { margin-left: auto; }
+
+  .plot-container {
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+    height: 600px;
+    border: 2px solid #5a2a10;
+    background: #111;
+    margin-top: 15px;
+    border-radius: 4px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .plot-wrap {
+    position: absolute; 
+    top: 50%; left: 50%;
+    display: inline-block; 
+    background: #fff; 
+    transform-origin: center center;
+  }
+  .plot-wrap img { display: block; user-select: none; -webkit-user-drag: none; }
+  
+  .plot-overlay { 
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+    z-index: 10; 
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><line x1="8" y1="0" x2="8" y2="16" stroke="black" stroke-width="1"/><line x1="0" y1="8" x2="16" y2="8" stroke="black" stroke-width="1"/><line x1="8" y1="0" x2="8" y2="16" stroke="white" stroke-width="1" stroke-dasharray="2,2"/><line x1="0" y1="8" x2="16" y2="8" stroke="white" stroke-width="1" stroke-dasharray="2,2"/></svg>') 8 8, crosshair;
+  }
+
+  .plot-overlay.panning { cursor: grab; }
+  .plot-overlay.panning:active { cursor: grabbing; }
+  
+  .ferm-line {
+    position: absolute; background: #ff4500; height: 3px; transform-origin: 0 50%;
+    border-radius: 2px; box-shadow: 0 0 6px rgba(255,60,0,0.8);
+    pointer-events: none;
+  }
+  
+  .ferm-label {
+    position: absolute; background: rgba(42, 20, 8, 0.95); color: #ffe8d0; font-weight: bold;
+    font-size: 12px; padding: 2px 6px; border-radius: 3px; border: 1px solid #ff8c00;
+    transform: translate(-50%, -50%); pointer-events: none; white-space: nowrap;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.6); z-index: 15; transition: font-size 0.1s;
+  }
+
+  .temp-dot {
+    position: absolute; width: 8px; height: 8px; background: #fff; border: 2px solid #ff4500; border-radius: 50%;
+    transform: translate(-50%, -50%); z-index: 20; pointer-events: none; box-shadow: 0 0 6px #ff4500;
+  }
+
+  .length-input-box {
+    position: absolute; background: #2a1408; border: 2px solid #ff4500; border-radius: 6px;
+    padding: 6px; display: flex; gap: 6px; align-items: center; z-index: 100;
+    box-shadow: 0 0 15px rgba(0,0,0,0.8); transform: translate(-50%, -50%); white-space: nowrap;
+  }
+  .length-input-box input { width: 60px; font-size: 14px; padding: 3px; text-align: center; }
+  .length-input-box button { margin: 0; padding: 3px 8px; background: linear-gradient(180deg, #ff8c00, #ff4500); color: #fff; border: none; font-weight: bold; font-size: 13px; }
+
+  table { border-collapse: collapse; width: 100%; background: #2a1408; margin-top: 10px; }
+  th, td { border: 1px solid #5a2a10; padding: 6px 8px; text-align: left; font-size: 14px; color: #ffe8d0; }
+  th { background: linear-gradient(180deg, #3d1a08, #2a1408); color: #ffb347; }
+
+  .hint { font-size: 12px; color: #a06a48; margin-top: 8px; line-height: 1.5; }
+
+  .report-box {
+    background: #1a0d06; border: 2px solid #ff8c00; padding: 14px; margin-top: 16px;
+    border-radius: 6px; box-shadow: 0 0 20px rgba(255,94,0,0.4); font-size: 15px; line-height: 1.6;
+  }
+  .report-box b { color: #ff8c00; }
+  .report-box .error { color: #ff6b6b; font-weight: bold; }
+
+  .project-buttons { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+
+  /* Модальное окно */
+  .modal-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.8); z-index: 9999; justify-content: center; align-items: center;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal-box {
+    background: #2a1408; border: 2px solid #ff8c00; border-radius: 8px; padding: 20px;
+    max-width: 400px; width: 90%; color: #ffe8d0; text-align: center;
+    box-shadow: 0 0 30px rgba(255,94,0,0.5);
+  }
+  .modal-box p { margin: 0 0 20px 0; font-size: 16px; }
+  .modal-box button { margin: 0 5px; }
+  .modal-box button.yes { background: linear-gradient(180deg, #b32a00, #7a1a00); color: #fff; border: none; }
+  .modal-box button.no { background: #5a2a10; color: #ffb347; border: none; }
+
+  /* Кастомный выбор файла */
+  .file-upload-wrap {
+    position: relative;
+    overflow: hidden;
+    display: inline-block;
+    margin-top: 10px;
+  }
+  .file-upload-wrap input[type="file"] {
+    position: absolute;
+    top: 0; right: 0; bottom: 0; left: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+  }
+  .file-upload-btn {
+    display: inline-block;
+    padding: 8px 14px;
+    background: #3d1a08;
+    color: #ffb347;
+    border: 1px solid #7a3a10;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.15s;
+  }
+  .file-upload-wrap:hover .file-upload-btn {
+    background: #5a2a10;
+    color: #ffd9a0;
+    box-shadow: 0 0 10px rgba(255,94,0,0.5);
+  }
+</style>
+</head>
+<body>
+
+<!-- МОДАЛЬНОЕ ОКНО -->
+<div id="modal" class="modal-overlay">
+  <div class="modal-box">
+    <p id="modalText"></p>
+    <div>
+      <button class="yes" onclick="modalYes()">Да</button>
+      <button class="no" onclick="modalNo()">Отмена</button>
+    </div>
+  </div>
+</div>
+
+<h1>🛠 Конфигуратор планов</h1>
+
+<div class="panel">
+  <div class="project-buttons">
+    <button onclick="saveProject()" style="background:linear-gradient(180deg, #0a7a0a, #055005); color:#fff; border:none; font-weight:bold; box-shadow:0 0 15px rgba(10,122,10,0.6);">💾 Сохранить проект (JSON)</button>
+    <button onclick="document.getElementById('loadProjectFile').click()" style="background:linear-gradient(180deg, #0275d8, #0056b3); color:#fff; border:none; font-weight:bold;">📂 Загрузить проект (JSON)</button>
+    <input type="file" id="loadProjectFile" accept=".json" style="display:none;" onchange="loadProject(event)">
+  </div>
+</div>
+
+<div class="panel" id="settings-panel">
+  <h2>📦 Наличие ферм на складе</h2>
+  <div class="stock-grid" id="stockRows"></div>
+  <button class="small" onclick="addStockItem()" style="margin-top:10px;">+ Добавить длину</button>
+</div>
+
+<div class="panel">
+  <h2>🗺 Загрузите Light Plot</h2>
+  
+  <div style="margin-bottom: 10px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+    <button id="btnModeSingle" class="active-mode" onclick="setMode('single')">Линия (2 клика)</button>
+    <button id="btnModeMulti" onclick="setMode('multi')">Ломаная (много кликов)</button>
+    <button id="btnFinishMulti" style="display:none; background:linear-gradient(180deg, #ff8c00, #ff4500); color:#fff; border:none; box-shadow:0 0 15px rgba(255,94,0,0.6);" onclick="finishMultiLine()">✅ Завершить цепь</button>
+    
+    <button id="btnSetScale" onclick="startScaleSetting()" style="background:linear-gradient(180deg, #0275d8, #0056b3); color:#fff; border:none;">📐 Задать масштаб</button>
+    <span id="scaleInfo" style="color:#cc8a5a; font-size:13px;">Масштаб не задан</span>
+    
+    <button onclick="zoomIn()" style="background:#3d1a08; color:#ffb347; border:1px solid #7a3a10;">🔍 +</button>
+    <button onclick="zoomOut()" style="background:#3d1a08; color:#ffb347; border:1px solid #7a3a10;">🔍 −</button>
+    <button onclick="fitToScreen()" style="background:#3d1a08; color:#ffb347; border:1px solid #7a3a10;">↺ Вписать</button>
+    <button id="btnPan" onclick="togglePan()" style="background:#3d1a08; color:#ffb347; border:1px solid #7a3a10;">✋ Рука</button>
+    
+    <button onclick="askClearPlot()" style="margin-left:auto; background:linear-gradient(180deg, #b32a00, #7a1a00); color:#fff; border:none;">🗑 Очистить план</button>
+  </div>
+
+  <div class="file-upload-wrap">
+    <span class="file-upload-btn" id="fileUploadBtnText">📁 Выберите Light Plot (картинку)</span>
+    <input type="file" id="plotFile" accept="image/*">
+  </div>
+  
+  <div id="scaleInputPanel" style="display:none; margin-top: 10px; background: #1a0d06; border: 2px solid #0275d8; padding: 10px; border-radius: 6px; width: fit-content;">
+    <span style="color: #cc8a5a; font-size: 13px; margin-right: 10px;">Введите реальное расстояние в метрах:</span>
+    <input type="number" id="scaleMetersInput" value="10" step="0.1" min="0.1" style="width: 80px; margin-right: 10px;">
+    <button onclick="applyScale()" style="margin: 0; background: #0275d8; color: #fff; border: none; font-weight: bold;">Применить</button>
+    <button onclick="cancelScale()" style="margin: 0; background: #5a2a10; color: #ffb347; border: none;">Отмена</button>
+  </div>
+
+  <!-- КАРТИНКА НА ЭКРАНЕ -->
+  <div class="plot-container" id="plotContainer">
+    <div class="plot-wrap" id="plotWrap" style="display:none;">
+      <img id="plotImg" alt="Light Plot" src="">
+      <div class="plot-overlay" id="plotOverlay"></div>
+    </div>
+  </div>
+
+  <div class="hint">
+    <b>Инструкция:</b> 
+    1. Задайте масштаб (кликните 2 точки и введите реальное расстояние).
+    2. Рисуйте линии планов (2 клика или ломаной). Линия тянется за курсором.
+    3. ПКМ (правая кнопка) — отменить текущую линию / завершить цепь.
+    4. Нажмите <b>✋ Рука</b>, чтобы двигать картинку.
+  </div>
+</div>
+
+<div class="panel" id="add-panel">
+  <h2>➕ Быстрый ввод без плана</h2>
+  <div style="display:flex; gap:10px; align-items:center; flex-wrap: wrap;">
+    <label>Длина, м: <input type="number" id="quickLengthInput" value="6" step="0.001" min="0.1" style="width:100px;"></label>
+    <button onclick="quickAddFerm()" style="background:linear-gradient(180deg, #ff8c00, #ff4500); color:#fff; border:none; font-weight:bold;">Добавить в список</button>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>📋 Список планов</h2>
+  <table id="fermTable">
+    <thead>
+      <tr>
+        <th style="width:50px;">№</th>
+        <th>Длина, м</th>
+        <th>Сборка (результат)</th>
+        <th style="width:80px;"></th>
+      </tr>
+    </thead>
+    <tbody id="fermRows"></tbody>
+  </table>
+  
+  <div style="margin-top:15px; display:flex; gap:10px; flex-wrap: wrap;">
+    <button class="calc" onclick="calculateAll()">🔥 Рассчитать общий список</button>
+    <button onclick="printReport()" style="background:linear-gradient(180deg, #0275d8, #0056b3); color:#fff; border:none;">🖨 Распечатать</button>
+    <button onclick="copyReport(this)" style="background:linear-gradient(180deg, #0a7a0a, #055005); color:#fff; border:none;">📋 Скопировать отчёт</button>
+    <button onclick="askClearTable()" style="background:#5a2a10; color:#ffb347; border:none;">🗑 Очистить таблицу</button>
+  </div>
+</div>
+
+<!-- ОТЧЕТ НА ЭКРАНЕ -->
+<div id="report" class="report-box" style="display:none;"></div>
+
+<script>
+// ==================== БАЗА ДАННЫХ СКЛАДА ====================
+let stockData = [
+  { id: 1, length: 0.58, qty: 10 },
+  { id: 2, length: 0.93, qty: 10 },
+  { id: 3, length: 0.934, qty: 10 },
+  { id: 4, length: 1.0, qty: 10 },
+  { id: 5, length: 1.155, qty: 10 },
+  { id: 6, length: 1.264, qty: 10 },
+  { id: 7, length: 1.3, qty: 10 },
+  { id: 8, length: 1.5, qty: 10 },
+  { id: 9, length: 2.0, qty: 10 },
+  { id: 10, length: 2.34, qty: 10 },
+  { id: 11, length: 2.4, qty: 10 },
+  { id: 12, length: 2.5, qty: 10 },
+  { id: 13, length: 3.0, qty: 10 },
+  { id: 14, length: 3.5, qty: 10 },
+  { id: 15, length: 4.0, qty: 10 }
+];
+let nextStockId = 16;
+
+let ferms = []; 
+let nextId = 1;
+
+let drawMode = 'single'; 
+let tempStart = null;    
+let multiPoints = [];    
+let inputOverlay = null;
+
+let pixelsPerMeter = null; 
+let isSettingScale = false; 
+let scaleStart = null;
+let scaleDistPx = 0;
+
+let zoomLevel = 1;
+let isPanMode = false;
+
+let isDragging = false;
+let dragStartX = 0;
+let dragStartY = 0;
+let currentTranslateX = 0;
+let currentTranslateY = 0;
+
+const overlay = document.getElementById('plotOverlay');
+const plotImg = document.getElementById('plotImg');
+const plotWrap = document.getElementById('plotWrap');
+const plotContainer = document.getElementById('plotContainer');
+const reportContainer = document.getElementById('report');
+
+// ==================== МОДАЛЬНОЕ ОКНО ====================
+let modalCallback = null;
+
+function showModal(text, callback) {
+  document.getElementById('modalText').textContent = text;
+  document.getElementById('modal').classList.add('show');
+  modalCallback = callback;
+}
+
+function modalYes() {
+  document.getElementById('modal').classList.remove('show');
+  if (modalCallback) modalCallback();
+  modalCallback = null;
+}
+
+function modalNo() {
+  document.getElementById('modal').classList.remove('show');
+  modalCallback = null;
+}
+
+// ==================== ПЕЧАТЬ (ЧЕРЕЗ IFRAME) ====================
+function printReport() {
+  if (document.activeElement) document.activeElement.blur();
+
+  if (reportContainer.style.display === 'none' || !reportContainer.innerHTML) {
+    alert('Сначала нажмите "Рассчитать общий список"');
+    return;
+  }
+
+  const reportHtml = reportContainer.innerHTML;
+  
+  const imgW = plotImg.naturalWidth;
+  const imgH = plotImg.naturalHeight;
+
+  let overlayHtml = '';
+  ferms.forEach(f => {
+    if (f.x1 === 0 && f.y1 === 0 && f.x2 === 0 && f.y2 === 0) return;
+    
+    const x1Pct = (f.x1 / imgW) * 100;
+    const y1Pct = (f.y1 / imgH) * 100;
+    const x2Pct = (f.x2 / imgW) * 100;
+    const y2Pct = (f.y2 / imgH) * 100;
+    
+    const midXPct = (x1Pct + x2Pct) / 2;
+    const midYPct = (y1Pct + y2Pct) / 2;
+
+    const dx = f.x2 - f.x1;
+    const dy = f.y2 - f.y1;
+    const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+    const lengthPct = Math.sqrt(dx*dx + dy*dy) / imgW * 100;
+
+    overlayHtml += `<div class="ferm-line" style="left: ${x1Pct}%; top: ${y1Pct}%; width: ${lengthPct}%; transform: rotate(${angle}deg);"></div>`;
+    
+    const labelText = f.assemblyText ? f.assemblyText : `${f.length} м`;
+    overlayHtml += `<div class="ferm-label" style="left: ${midXPct}%; top: ${midYPct}%;">№${f.id}: ${labelText}</div>`;
+  });
+
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentWindow.document;
+  
+  doc.open();
+  doc.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Печать отчета</title>
+      <style>
+        @page { margin: 10mm; size: A4 portrait; }
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #fff; color: #000; }
+        
+        /* Страница 1: Картинка на весь лист */
+        .page-1 {
+          width: 100%;
+          height: 260mm;
+          page-break-after: always;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          position: relative;
+        }
+        
+        .img-wrapper {
+          position: relative;
+          width: 100%;
+          height: 100%;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+        }
+
+        /* Принудительно растягиваем картинку на 100% листа */
+        .img-wrapper img {
+          width: 100%;
+          height: 100%;
+          object-fit: fill; /* Растягиваем, игнорируя пропорции */
+          display: block;
+          filter: grayscale(100%) contrast(120%);
+        }
+
+        /* Оверлей с линиями, растянутый ровно по картинке */
+        .img-wrapper .overlay {
+          position: absolute;
+          top: 0; left: 0;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+        }
+
+        .ferm-line { 
+          position: absolute; 
+          background: #000; 
+          height: 4px; 
+          transform-origin: 0 50%; 
+        }
+        
+        .ferm-label { 
+          position: absolute; 
+          background: #fff; 
+          color: #000; 
+          border: 2px solid #000; 
+          font-size: 16px; 
+          padding: 4px 8px; 
+          transform: translate(-50%, -50%); 
+          white-space: nowrap; 
+          font-weight: bold;
+        }
+
+        /* Страница 2: Отчет */
+        .page-2 {
+          page-break-before: always;
+          width: 100%;
+          padding-top: 20px;
+        }
+        .report-content {
+          border: 2px solid #000;
+          padding: 15px;
+        }
+        .report-content h3 { margin-top: 0; margin-bottom: 10px; }
+        .report-content b { color: #000; }
+        .report-content .error { color: #f00; }
+        .report-content hr { border-color: #ccc; margin: 12px 0; }
+      </style>
+    </head>
+    <body>
+      <div class="page-1">
+        ${plotImg.src ? `
+          <div class="img-wrapper">
+            <img src="${plotImg.src}">
+            <div class="overlay">
+              ${overlayHtml}
+            </div>
+          </div>
+        ` : '<div style="color: #999; text-align: center;">Картинка не загружена</div>'}
+      </div>
+      <div class="page-2">
+        <div class="report-content">
+          ${reportHtml}
+        </div>
+      </div>
+    </body>
+    </html>
+  `);
+  doc.close();
+
+  iframe.onload = function() {
+    setTimeout(() => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+      setTimeout(() => document.body.removeChild(iframe), 1000);
+    }, 500);
+  };
+}
+
+// ==================== КОПИРОВАНИЕ ОТЧЁТА ====================
+function copyReport(btn) {
+  if (reportContainer.style.display === 'none' || !reportContainer.innerHTML) {
+    alert('Сначала нажмите "Рассчитать общий список"');
+    return;
+  }
+  
+  let text = "📋 ОТЧЁТ ПО СБОРКЕ ПЛАНОВ\n\n";
+  ferms.forEach(f => {
+    if (f.assemblyText) {
+      text += `• План №${f.id} (${f.length} м): ${f.assemblyText}\n`;
+    }
+  });
+  
+  text += "\n📦 ИТОГОВЫЙ СПИСОК ДЛЯ СКЛАДА:\n";
+  const totalStock = {};
+  ferms.forEach(f => {
+    if (f.assemblyParts && f.assemblyParts.length) {
+      f.assemblyParts.forEach(p => {
+        totalStock[p.len] = (totalStock[p.len] || 0) + p.count;
+      });
+    }
+  });
+  
+  const sortedLengths = Object.keys(totalStock).map(Number).sort((a,b) => b - a);
+  let totalPieces = 0;
+  sortedLengths.forEach(len => {
+    const count = totalStock[len];
+    totalPieces += count;
+    text += `• Ферма ${formatLen(len)} м — ${count} шт.\n`;
+  });
+  text += `\nВсего кусков: ${totalPieces}\n`;
+  
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => {
+      showCopySuccess(btn);
+    }).catch(err => {
+      fallbackCopy(text, btn);
+    });
+  } else {
+    fallbackCopy(text, btn);
+  }
+}
+
+function fallbackCopy(text, btn) {
+  const textArea = document.createElement("textarea");
+  textArea.value = text;
+  textArea.style.position = "fixed";
+  textArea.style.top = "-9999px";
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+  try {
+    if (document.execCommand('copy')) showCopySuccess(btn);
+    else alert('Не удалось скопировать.');
+  } catch (err) {
+    alert('Ошибка копирования: ' + err);
+  }
+  document.body.removeChild(textArea);
+}
+
+function showCopySuccess(btn) {
+  const originalText = btn.textContent;
+  btn.textContent = '✅ Скопировано!';
+  btn.style.background = 'linear-gradient(180deg, #0fa00f, #077007)';
+  setTimeout(() => {
+    btn.textContent = originalText;
+    btn.style.background = 'linear-gradient(180deg, #0a7a0a, #055005)';
+  }, 2000);
+}
+
+// ==================== СОХРАНЕНИЕ / ЗАГРУЗКА ====================
+function buildProjectData() {
+  return {
+    stock: stockData,
+    ferms: ferms,
+    plotImage: plotImg.src || '',
+    settings: {
+      pixelsPerMeter: pixelsPerMeter,
+      zoomLevel: zoomLevel,
+      translateX: currentTranslateX,
+      translateY: currentTranslateY
+    }
+  };
+}
+
+function saveProject() {
+  try {
+    const jsonString = JSON.stringify(buildProjectData(), null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'ferm_project.json';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (err) {
+    showJsonFallback();
+  }
+}
+
+function showJsonFallback() {
+  const jsonString = JSON.stringify(buildProjectData(), null, 2);
+  const w = window.open('', '_blank');
+  if (!w) {
+    alert('Не удалось открыть окно. Скопируйте JSON из консоли (см. ниже).');
+    console.log(jsonString);
+    return;
+  }
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>ferm_project.json</title>
+    <style>body{font-family:monospace;background:#1a0d06;color:#ffe8d0;padding:16px;}
+    textarea{width:100%;height:70vh;background:#2a1408;color:#ffe8d0;border:1px solid #5a2a10;padding:10px;}
+    button{margin:8px 4px 0 0;padding:8px 14px;background:#ff8c00;color:#fff;border:none;border-radius:4px;cursor:pointer;}</style>
+    </head><body>
+    <h3>Сохранение проекта</h3>
+    <p>Если файл не скачался автоматически — скопируйте текст и сохраните как <b>ferm_project.json</b>.</p>
+    <textarea id="ta"></textarea>
+    <div>
+      <button onclick="document.getElementById('ta').select();document.execCommand('copy');this.textContent='Скопировано!'">Копировать</button>
+      <button onclick="const b=new Blob([document.getElementById('ta').value],{type:'application/json'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='ferm_project.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),4000);">Скачать</button>
+    </div>
+    <script>document.getElementById('ta').value=${JSON.stringify(jsonString)};<\/script>
+    </body></html>`);
+  w.document.close();
+}
+
+function loadProject(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (data.stock) { stockData = data.stock; renderStock(); }
+      if (data.ferms) {
+        ferms = data.ferms;
+        nextId = ferms.length > 0 ? Math.max(...ferms.map(f => f.id)) + 1 : 1;
+        renderTable();
+      }
+      if (data.plotImage) {
+        plotImg.src = data.plotImage;
+        plotWrap.style.display = 'inline-block';
+        document.getElementById('fileUploadBtnText').textContent = '📁 Изображение загружено (нажмите, чтобы сменить)';
+      } else {
+        plotImg.src = '';
+        plotWrap.style.display = 'none';
+        document.getElementById('fileUploadBtnText').textContent = '📁 Выберите Light Plot (картинку)';
+      }
+      if (data.settings) {
+        pixelsPerMeter = data.settings.pixelsPerMeter || null;
+        zoomLevel = data.settings.zoomLevel || 1;
+        currentTranslateX = data.settings.translateX || 0;
+        currentTranslateY = data.settings.translateY || 0;
+        applyTransform();
+        document.getElementById('scaleInfo').textContent = pixelsPerMeter ? `Масштаб: 1 м = ${Math.round(pixelsPerMeter)} px` : 'Масштаб не задан';
+      }
+      redrawPlot();
+      reportContainer.style.display = 'none';
+      alert('Проект успешно загружен!');
+    } catch (err) {
+      alert('Ошибка загрузки: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = ''; 
+}
+
+// ==================== ОЧИСТКА ====================
+function askClearPlot() {
+  showModal('Очистить план и разметку? (Список планов останется)', () => {
+    plotImg.src = '';
+    plotWrap.style.display = 'none';
+    document.getElementById('plotFile').value = ''; 
+    document.getElementById('scaleInfo').textContent = 'Масштаб не задан';
+    document.getElementById('fileUploadBtnText').textContent = '📁 Выберите Light Plot (картинку)';
+    pixelsPerMeter = null;
+    clearOverlayElements();
+    resetTempState();
+  });
+}
+
+function askClearTable() {
+  showModal('Очистить список планов? (Картинка останется)', () => {
+    ferms = [];
+    nextId = 1;
+    renderTable();
+    redrawPlot(); 
+    reportContainer.style.display = 'none';
+  });
+}
+
+// ==================== ЦЕНТРИРОВАНИЕ И МАСШТАБ ====================
+function fitToScreen() {
+  if (!plotImg.src) return;
+  currentTranslateX = 0;
+  currentTranslateY = 0;
+  const containerW = plotContainer.clientWidth;
+  const containerH = plotContainer.clientHeight;
+  const imgW = plotImg.naturalWidth;
+  const imgH = plotImg.naturalHeight;
+  if (imgW === 0 || imgH === 0) return;
+  const scaleX = (containerW - 40) / imgW;
+  const scaleY = (containerH - 40) / imgH;
+  zoomLevel = Math.min(scaleX, scaleY);
+  if (zoomLevel > 1) zoomLevel = 1;
+  applyTransform();
+}
+
+function applyTransform() {
+  plotWrap.style.transform = `translate(calc(-50% + ${currentTranslateX}px), calc(-50% + ${currentTranslateY}px)) scale(${zoomLevel})`;
+  redrawPlot();
+}
+
+function zoomIn() { zoomLevel += 0.2; applyTransform(); }
+function zoomOut() { if (zoomLevel > 0.2) { zoomLevel -= 0.2; applyTransform(); } }
+
+function togglePan() {
+  isPanMode = !isPanMode;
+  document.getElementById('btnPan').classList.toggle('active-mode', isPanMode);
+  overlay.classList.toggle('panning', isPanMode);
+  if (isPanMode) resetTempState(); 
+}
+
+// ==================== БЫСТРЫЙ ВВОД ====================
+function quickAddFerm() {
+  const input = document.getElementById('quickLengthInput');
+  const val = parseFloat(input.value);
+  if (isNaN(val) || val <= 0) { alert('Введите длину больше нуля'); return; }
+  ferms.push({ id: nextId++, length: val, x1: 0, y1: 0, x2: 0, y2: 0 });
+  renderTable();
+  reportContainer.style.display = 'none';
+  input.focus();
+  input.select();
+}
+
+// ==================== РЕНДЕР СКЛАДА ====================
+function renderStock() {
+  const container = document.getElementById('stockRows');
+  container.innerHTML = '';
+  stockData.forEach((item, index) => {
+    const div = document.createElement('div');
+    div.className = 'stock-item';
+    div.innerHTML = `
+      <span>Длина: </span>
+      <input type="number" value="${item.length}" step="0.001" min="0.1" onchange="updateStock(${index}, 'length', this.value)">
+      <span>шт: </span>
+      <input type="number" value="${item.qty}" step="1" min="0" onchange="updateStock(${index}, 'qty', this.value)">
+      <button class="del" onclick="removeStock(${index})">✕</button>
+    `;
+    container.appendChild(div);
+  });
+}
+function updateStock(index, field, val) {
+  const parsed = parseFloat(val);
+  if (isNaN(parsed)) return;
+  stockData[index][field] = parsed;
+}
+function addStockItem() {
+  stockData.push({ id: nextStockId++, length: 1.0, qty: 1 });
+  renderStock();
+}
+function removeStock(index) {
+  stockData.splice(index, 1);
+  renderStock();
+}
+
+// ==================== СМЕНА РЕЖИМА ====================
+function setMode(mode) {
+  drawMode = mode;
+  document.getElementById('btnModeSingle').classList.toggle('active-mode', mode === 'single');
+  document.getElementById('btnModeMulti').classList.toggle('active-mode', mode === 'multi');
+  document.getElementById('btnFinishMulti').style.display = (mode === 'multi') ? 'inline-block' : 'none';
+  resetTempState();
+}
+
+// ==================== ЗАГРУЗКА КАРТИНКИ ====================
+document.getElementById('plotFile').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    plotImg.src = ev.target.result;
+    plotWrap.style.display = 'inline-block';
+    document.getElementById('fileUploadBtnText').textContent = '📁 Изображение загружено (нажмите, чтобы сменить)';
+    if (plotImg.complete) fitToScreen();
+    else plotImg.onload = fitToScreen;
+    pixelsPerMeter = null;
+    document.getElementById('scaleInfo').textContent = 'Масштаб не задан';
+    resetTempState();
+    clearOverlayElements();
+    redrawPlot();
+    reportContainer.style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+});
+
+// ==================== МАСШТАБ ====================
+function startScaleSetting() {
+  if (!plotImg.src) { alert('Сначала загрузите картинку!'); return; }
+  if (isPanMode) togglePan(); 
+  isSettingScale = true;
+  scaleStart = null;
+  document.getElementById('scaleInfo').textContent = 'Кликните 2 точки для масштаба...';
+  document.getElementById('scaleInputPanel').style.display = 'none';
+  resetTempState();
+}
+
+function applyScale() {
+  const val = parseFloat(document.getElementById('scaleMetersInput').value);
+  if (isNaN(val) || val <= 0) { alert('Введите корректное расстояние'); return; }
+  pixelsPerMeter = scaleDistPx / val;
+  document.getElementById('scaleInfo').textContent = `Масштаб: 1 м = ${Math.round(pixelsPerMeter)} px`;
+  document.getElementById('scaleInputPanel').style.display = 'none';
+  resetTempState();
+  isSettingScale = false;
+  scaleStart = null;
+}
+
+function cancelScale() {
+  document.getElementById('scaleInputPanel').style.display = 'none';
+  resetTempState();
+  isSettingScale = false;
+  scaleStart = null;
+  document.getElementById('scaleInfo').textContent = 'Масштаб не задан';
+}
+
+// ==================== ОТМЕНА ПРАВОЙ КНОПКОЙ ====================
+overlay.addEventListener('contextmenu', function(e) {
+  e.preventDefault(); 
+  if (isSettingScale) cancelScale();
+  else { 
+    if (drawMode === 'multi' && multiPoints.length >= 2) {
+      finishMultiLine();
+    } else {
+      resetTempState(); 
+      redrawPlot(); 
+    }
+  }
+});
+
+// ==================== РЕЗИНКА ====================
+overlay.addEventListener('mousemove', function(e) {
+  if (isPanMode) return;
+  if (!plotImg.src || isSettingScale || inputOverlay) return;
+  
+  const rect = overlay.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / zoomLevel;
+  const y = (e.clientY - rect.top) / zoomLevel;
+
+  let rb = document.getElementById('rubber-line');
+
+  if (drawMode === 'single' && tempStart) {
+    if (!rb) {
+      rb = document.createElement('div');
+      rb.id = 'rubber-line';
+      rb.className = 'ferm-line';
+      rb.style.opacity = '0.5';
+      rb.style.pointerEvents = 'none';
+      overlay.appendChild(rb);
+    }
+    const dx = x - tempStart.x;
+    const dy = y - tempStart.y;
+    const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+    const length = Math.sqrt(dx*dx + dy*dy);
+    rb.style.left = tempStart.x + 'px';
+    rb.style.top = tempStart.y + 'px';
+    rb.style.width = length + 'px';
+    rb.style.height = (3 / zoomLevel) + 'px';
+    rb.style.transform = `rotate(${angle}deg)`;
+    rb.style.display = 'block';
+  } 
+  else if (drawMode === 'multi' && multiPoints.length > 0) {
+    const lastPt = multiPoints[multiPoints.length - 1];
+    if (!rb) {
+      rb = document.createElement('div');
+      rb.id = 'rubber-line';
+      rb.className = 'ferm-line';
+      rb.style.opacity = '0.5';
+      rb.style.pointerEvents = 'none';
+      overlay.appendChild(rb);
+    }
+    const dx = x - lastPt.x;
+    const dy = y - lastPt.y;
+    const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+    const length = Math.sqrt(dx*dx + dy*dy);
+    rb.style.left = lastPt.x + 'px';
+    rb.style.top = lastPt.y + 'px';
+    rb.style.width = length + 'px';
+    rb.style.height = (3 / zoomLevel) + 'px';
+    rb.style.transform = `rotate(${angle}deg)`;
+    rb.style.display = 'block';
+  } else {
+    if (rb) rb.style.display = 'none';
+  }
+});
+
+// ==================== ПАНОРАМИРОВАНИЕ ====================
+overlay.addEventListener('mousedown', function(e) {
+  if (isPanMode && e.button === 0) {
+    isDragging = true;
+    dragStartX = e.clientX - currentTranslateX;
+    dragStartY = e.clientY - currentTranslateY;
+  }
+});
+overlay.addEventListener('mouseup', function(e) {
+  if (isPanMode && e.button === 0) isDragging = false;
+});
+overlay.addEventListener('mousemove', function(e) {
+  if (isPanMode && isDragging) {
+    currentTranslateX = e.clientX - dragStartX;
+    currentTranslateY = e.clientY - dragStartY;
+    applyTransform();
+    return; 
+  }
+});
+
+// ==================== КЛИКИ ====================
+overlay.addEventListener('click', function(e) {
+  if (isPanMode) return; 
+  if (!plotImg.src || inputOverlay) return;
+
+  const rect = overlay.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / zoomLevel;
+  const y = (e.clientY - rect.top) / zoomLevel;
+
+  if (isSettingScale) {
+    if (!scaleStart) {
+      scaleStart = { x, y };
+      createTempDot(x, y, '#0275d8');
+    } else {
+      scaleDistPx = Math.sqrt(Math.pow(x - scaleStart.x, 2) + Math.pow(y - scaleStart.y, 2));
+      document.getElementById('scaleInputPanel').style.display = 'block';
+      document.getElementById('scaleMetersInput').focus();
+      document.getElementById('scaleMetersInput').select();
+    }
+    return;
+  }
+
+  if (drawMode === 'single') handleSingleClick(x, y);
+  else handleMultiClick(x, y);
+});
+
+// ==================== ОДИНОЧНАЯ ЛИНИЯ ====================
+function handleSingleClick(x, y) {
+  if (!tempStart) {
+    tempStart = { x, y };
+    createTempDot(x, y);
+  } else {
+    const x1 = tempStart.x;
+    const y1 = tempStart.y;
+    const x2 = x;
+    const y2 = y;
+    removeTempDots();
+    removeRubberLine();
+    const midX = (x1 + x2) / 2;
+    const midY = (y1 + y2) / 2;
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const pxDist = Math.sqrt(dx*dx + dy*dy);
+    let calcLength = pixelsPerMeter ? (pxDist / pixelsPerMeter).toFixed(2) : "";
+    drawPreviewLine(x1, y1, x2, y2);
+    tempStart = null; 
+
+    showLengthInput(midX, midY, calcLength, (val) => {
+      if (!isNaN(val) && val > 0) {
+        ferms.push({ id: nextId++, length: val, x1, y1, x2, y2 });
+        renderTable();
+      }
+      redrawPlot();
+      reportContainer.style.display = 'none';
+    });
+  }
+}
+
+// ==================== ЛОМАНАЯ ====================
+function handleMultiClick(x, y) {
+  if (multiPoints.length > 0) {
+    const last = multiPoints[multiPoints.length - 1];
+    const dist = Math.sqrt(Math.pow(x - last.x, 2) + Math.pow(y - last.y, 2));
+    if (dist < 10 / zoomLevel) {
+      finishMultiLine();
+      return;
+    }
+  }
+  multiPoints.push({ x, y });
+  createTempDot(x, y);
+  if (multiPoints.length > 1) {
+    const prev = multiPoints[multiPoints.length - 2];
+    drawPreviewLine(prev.x, prev.y, x, y);
+  }
+  removeRubberLine();
+}
+
+function finishMultiLine() {
+  if (multiPoints.length < 2) { resetTempState(); return; }
+  removeRubberLine();
+  const pointsToAsk = [...multiPoints];
+  resetTempState();
+  let i = 0;
+  
+  function askNext() {
+    if (i >= pointsToAsk.length - 1) {
+      redrawPlot();
+      reportContainer.style.display = 'none';
+      return;
+    }
+    const p1 = pointsToAsk[i];
+    const p2 = pointsToAsk[i + 1];
+    const midX = (p1.x + p2.x) / 2;
+    const midY = (p1.y + p2.y) / 2;
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const pxDist = Math.sqrt(dx*dx + dy*dy);
+    let calcLength = pixelsPerMeter ? (pxDist / pixelsPerMeter).toFixed(2) : "";
+
+    showLengthInput(midX, midY, calcLength, (val) => {
+      if (!isNaN(val) && val > 0) {
+        ferms.push({ id: nextId++, length: val, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y });
+        renderTable();
+      }
+      i++;
+      setTimeout(askNext, 50);
+    });
+  }
+  askNext();
+}
+
+// ==================== ВСПОМОГАТЕЛЬНЫЕ ====================
+function createTempDot(x, y, color = '#ff4500') {
+  const dot = document.createElement('div');
+  dot.className = 'temp-dot';
+  dot.style.left = x + 'px';
+  dot.style.top = y + 'px';
+  dot.style.borderColor = color;
+  dot.style.boxShadow = `0 0 6px ${color}`;
+  overlay.appendChild(dot);
+}
+function removeTempDots() { overlay.querySelectorAll('.temp-dot').forEach(el => el.remove()); }
+function removeRubberLine() { const rb = document.getElementById('rubber-line'); if (rb) rb.remove(); }
+function clearOverlayElements() { 
+  overlay.querySelectorAll('.ferm-line, .ferm-label, .temp-dot, .length-input-box, #rubber-line, .preview-line').forEach(el => el.remove()); 
+}
+function resetTempState() {
+  tempStart = null;
+  multiPoints = [];
+  removeTempDots();
+  removeRubberLine();
+  overlay.querySelectorAll('.preview-line').forEach(el => el.remove());
+  if (inputOverlay) { if (inputOverlay.parentNode) inputOverlay.remove(); inputOverlay = null; }
+}
+function drawPreviewLine(x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+  const length = Math.sqrt(dx*dx + dy*dy);
+  const line = document.createElement('div');
+  line.className = 'ferm-line preview-line';
+  line.style.left = x1 + 'px';
+  line.style.top = y1 + 'px';
+  line.style.width = length + 'px';
+  line.style.height = (3 / zoomLevel) + 'px';
+  line.style.transform = `rotate(${angle}deg)`;
+  line.style.opacity = '0.6'; 
+  overlay.appendChild(line);
+}
+
+// ==================== ОКНО ВВОДА ====================
+function showLengthInput(midX, midY, defaultVal, onSave) {
+  if (inputOverlay) inputOverlay.remove();
+  inputOverlay = document.createElement('div');
+  inputOverlay.className = 'length-input-box';
+  inputOverlay.style.left = midX + 'px'; 
+  inputOverlay.style.top = midY + 'px';
+  inputOverlay.innerHTML = `
+    <input type="number" id="inlineLength" value="${defaultVal}" step="0.001" min="0.1" placeholder="Длина">
+    <button id="btnSaveLength">OK</button>
+  `;
+  inputOverlay.addEventListener('click', (ev) => ev.stopPropagation());
+  inputOverlay.addEventListener('contextmenu', (ev) => ev.stopPropagation());
+  overlay.appendChild(inputOverlay);
+  const inp = document.getElementById('inlineLength');
+  inp.focus();
+  inp.select();
+
+  const saveFn = () => {
+    const val = parseFloat(inp.value);
+    if (inputOverlay) { inputOverlay.remove(); inputOverlay = null; }
+    overlay.querySelectorAll('.preview-line').forEach(el => el.remove());
+    onSave(val);
+  };
+
+  document.getElementById('btnSaveLength').onclick = saveFn;
+  inp.onkeydown = (ev) => { if (ev.key === 'Enter') saveFn(); };
+  inp.onkeyup = (ev) => {
+    if (ev.key === 'Escape') { resetTempState(); redrawPlot(); }
+  };
+}
+
+// ==================== ОТРИСОВКА ====================
+function redrawPlot() {
+  overlay.querySelectorAll('.ferm-line, .ferm-label').forEach(el => el.remove());
+  ferms.forEach(f => {
+    if (f.x1 === 0 && f.y1 === 0 && f.x2 === 0 && f.y2 === 0) return;
+    const dx = f.x2 - f.x1;
+    const dy = f.y2 - f.y1;
+    const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+    const length = Math.sqrt(dx*dx + dy*dy);
+
+    const line = document.createElement('div');
+    line.className = 'ferm-line';
+    line.style.left = f.x1 + 'px';
+    line.style.top = f.y1 + 'px';
+    line.style.width = length + 'px';
+    line.style.height = (3 / zoomLevel) + 'px';
+    line.style.transform = `rotate(${angle}deg)`;
+    overlay.appendChild(line);
+
+    const midX = (f.x1 + f.x2) / 2;
+    const midY = (f.y1 + f.y2) / 2;
+    const assemblyText = f.assemblyText ? f.assemblyText : `${f.length} м`;
+    const label = document.createElement('div');
+    label.className = 'ferm-label';
+    label.style.left = midX + 'px';
+    label.style.top = midY + 'px';
+    let baseFontSize = 12;
+    let scaledFontSize = baseFontSize / zoomLevel;
+    if (scaledFontSize < 8) scaledFontSize = 8;
+    if (scaledFontSize > 24) scaledFontSize = 24;
+    label.style.fontSize = scaledFontSize + 'px';
+    label.style.padding = (2 / zoomLevel) + 'px ' + (6 / zoomLevel) + 'px';
+    label.style.borderWidth = (1 / zoomLevel) + 'px';
+    label.textContent = `№${f.id}: ${assemblyText}`;
+    overlay.appendChild(label);
+  });
+}
+
+// ==================== ТАБЛИЦА ====================
+function renderTable() {
+  const tbody = document.getElementById('fermRows');
+  tbody.innerHTML = '';
+  ferms.forEach((f, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${f.id}</td>
+      <td><input type="number" value="${f.length}" step="0.001" min="0.1" style="width:80px;" onchange="updateLength(${i}, this.value)"> м</td>
+      <td style="color:#ffb347;">${f.assemblyText || '—'}</td>
+      <td><button class="del" onclick="removeFerm(${i})">✕</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+function updateLength(index, val) {
+  const parsed = parseFloat(val);
+  if (isNaN(parsed) || parsed <= 0) return;
+  ferms[index].length = parsed;
+  ferms[index].assemblyText = null;
+  ferms[index].assemblyParts = null;
+  redrawPlot();
+  reportContainer.style.display = 'none';
+}
+function removeFerm(index) {
+  ferms.splice(index, 1);
+  renderTable();
+  redrawPlot();
+  reportContainer.style.display = 'none';
+}
+
+// ==================== АЛГОРИТМ ПОДБОРА ====================
+const EPS = 0.005;
+
+function buildGreedy(targetLen, availableLengths, stock) {
+  let remain = targetLen;
+  const combo = [];
+  const tempStock = { ...stock };
+  for (let i = 0; i < availableLengths.length; i++) {
+    const len = availableLengths[i];
+    if (len > remain + EPS) continue;
+    const available = tempStock[len] || 0;
+    if (available <= 0) continue;
+    let count = Math.floor((remain + EPS) / len);
+    if (count > available) count = available;
+    for (let c = 0; c < count; c++) { combo.push(len); tempStock[len]--; }
+    remain -= count * len;
+    if (remain < EPS) break;
+  }
+  if (remain > EPS) return null;
+  return combo;
+}
+
+function assembleOne(targetLen, stock, availableLengths) {
+  const half = targetLen / 2;
+  if (half > EPS) {
+    for (let i = 0; i < availableLengths.length; i++) {
+      const len = availableLengths[i];
+      if (Math.abs(len - half) < EPS && (stock[len] || 0) >= 2) {
+        const newStock = { ...stock };
+        newStock[len] -= 2;
+        return { parts: [{ len, count: 2 }], text: `2×${formatLen(len)}м`, newStock };
+      }
+    }
+    const stockCopy = { ...stock };
+    const part1 = buildGreedy(half, availableLengths, stockCopy);
+    if (part1) {
+      part1.forEach(l => stockCopy[l]--);
+      const part2 = buildGreedy(half, availableLengths, stockCopy);
+      if (part2) {
+        const combo = [...part1, ...part2];
+        const grouped = {};
+        combo.forEach(l => grouped[l] = (grouped[l] || 0) + 1);
+        const parts = [];
+        for (let l of availableLengths) {
+          if (grouped[l]) parts.push({ len: l, count: grouped[l] });
+        }
+        const newStock = { ...stockCopy };
+        part2.forEach(l => newStock[l]--);
+        return { parts, text: parts.map(p => `${p.count}×${formatLen(p.len)}м`).join(' + '), newStock };
+      }
+    }
+  }
+
+  const res = buildGreedy(targetLen, availableLengths, stock);
+  if (!res) return { error: true };
+  const grouped = {};
+  res.forEach(l => grouped[l] = (grouped[l] || 0) + 1);
+  const parts = [];
+  for (let l of availableLengths) {
+    if (grouped[l]) parts.push({ len: l, count: grouped[l] });
+  }
+  const newStock = { ...stock };
+  res.forEach(l => newStock[l]--);
+  return { parts, text: parts.map(p => `${p.count}×${formatLen(p.len)}м`).join(' + '), newStock };
+}
+
+function calculateAll() {
+  if (ferms.length === 0) { alert('Добавьте хотя бы один план'); return; }
+  
+  const stock = {};
+  stockData.forEach(item => {
+    if (item.qty > 0) stock[item.length] = (stock[item.length] || 0) + item.qty;
+  });
+  const availableLengths = Object.keys(stock).map(Number).sort((a,b) => b - a);
+  if (availableLengths.length === 0) { alert('На складе нет ферм!'); return; }
+
+  let workingStock = { ...stock };
+  let reportHtml = `<h3>📋 Отчёт по сборке планов</h3>`;
+
+  ferms.forEach(f => {
+    const res = assembleOne(f.length, workingStock, availableLengths);
+    if (res.error) {
+      f.assemblyText = `Ошибка: невозможно собрать ${f.length} м`;
+      f.assemblyParts = null;
+      reportHtml += `<div style="margin-bottom:8px; border-left: 3px solid #ff6b6b; padding-left: 8px;"><b>План №${f.id} (${f.length} м):</b> <span class="error">${f.assemblyText}</span></div>`;
+    } else {
+      f.assemblyText = res.text;
+      f.assemblyParts = res.parts;
+      workingStock = res.newStock;
+      reportHtml += `<div style="margin-bottom:8px; border-left: 3px solid #ff8c00; padding-left: 8px;"><b>План №${f.id} (${f.length} м):</b> ${res.text}</div>`;
+    }
+  });
+
+  const totalUsed = {};
+  ferms.forEach(f => {
+    if (f.assemblyParts) {
+      f.assemblyParts.forEach(p => {
+        totalUsed[p.len] = (totalUsed[p.len] || 0) + p.count;
+      });
+    }
+  });
+
+  reportHtml += `<hr style="border-color:#5a2a10; margin:12px 0;">`;
+  reportHtml += `<h3>📦 Итоговый список для склада:</h3>`;
+  let totalPieces = 0;
+  const usedLengths = Object.keys(totalUsed).map(Number).sort((a,b) => b - a);
+  usedLengths.forEach(len => {
+    const used = totalUsed[len];
+    totalPieces += used;
+    reportHtml += `<div style="margin-bottom:4px;">• Ферма <b>${formatLen(len)} м</b> — <b>${used} шт.</b></div>`;
+  });
+  if (usedLengths.length === 0) {
+    reportHtml += `<div class="error">Ничего не собрано.</div>`;
+  } else {
+    reportHtml += `<div style="margin-top:8px; color:#cc8a5a;">Всего кусков: ${totalPieces}</div>`;
+  }
+
+  reportContainer.innerHTML = reportHtml;
+  reportContainer.style.display = 'block';
+  redrawPlot();
+}
+
+function formatLen(l) {
+  return l % 1 === 0 ? l : l.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+// ==================== ИНИЦИАЛИЗАЦИЯ ====================
+renderStock();
+</script>
+
+</body>
+</html>
