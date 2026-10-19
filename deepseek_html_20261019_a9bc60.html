@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Конфигуратор планов</title>
 <style>
-  /* ================= БАЗА ================= */
   body {
     font-family: Arial, sans-serif;
     margin: 0 auto;
@@ -105,6 +104,7 @@
 
   .plot-overlay.panning { cursor: grab; }
   .plot-overlay.panning:active { cursor: grabbing; }
+  .plot-overlay.cropping { cursor: crosshair; }
   
   .ferm-line {
     position: absolute; background: #ff4500; height: 3px; transform-origin: 0 50%;
@@ -122,6 +122,11 @@
   .temp-dot {
     position: absolute; width: 8px; height: 8px; background: #fff; border: 2px solid #ff4500; border-radius: 50%;
     transform: translate(-50%, -50%); z-index: 20; pointer-events: none; box-shadow: 0 0 6px #ff4500;
+  }
+
+  .crop-box {
+    position: absolute; border: 2px dashed #0275d8; background: rgba(2,117,216,0.2);
+    z-index: 30; pointer-events: none; display: none;
   }
 
   .length-input-box {
@@ -147,7 +152,6 @@
 
   .project-buttons { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 
-  /* Модальное окно */
   .modal-overlay {
     display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
     background: rgba(0,0,0,0.8); z-index: 9999; justify-content: center; align-items: center;
@@ -163,7 +167,6 @@
   .modal-box button.yes { background: linear-gradient(180deg, #b32a00, #7a1a00); color: #fff; border: none; }
   .modal-box button.no { background: #5a2a10; color: #ffb347; border: none; }
 
-  /* Кастомный выбор файла */
   .file-upload-wrap {
     position: relative;
     overflow: hidden;
@@ -198,7 +201,6 @@
 </head>
 <body>
 
-<!-- МОДАЛЬНОЕ ОКНО -->
 <div id="modal" class="modal-overlay">
   <div class="modal-box">
     <p id="modalText"></p>
@@ -232,6 +234,7 @@
     <button id="btnModeSingle" class="active-mode" onclick="setMode('single')">Линия (2 клика)</button>
     <button id="btnModeMulti" onclick="setMode('multi')">Ломаная (много кликов)</button>
     <button id="btnFinishMulti" style="display:none; background:linear-gradient(180deg, #ff8c00, #ff4500); color:#fff; border:none; box-shadow:0 0 15px rgba(255,94,0,0.6);" onclick="finishMultiLine()">✅ Завершить цепь</button>
+    <button id="btnCrop" onclick="startCrop()" style="background:linear-gradient(180deg, #ff8c00, #ff4500); color:#fff; border:none; box-shadow:0 0 15px rgba(255,94,0,0.6);">✂️ Обрезать</button>
     
     <button id="btnSetScale" onclick="startScaleSetting()" style="background:linear-gradient(180deg, #0275d8, #0056b3); color:#fff; border:none;">📐 Задать масштаб</button>
     <span id="scaleInfo" style="color:#cc8a5a; font-size:13px;">Масштаб не задан</span>
@@ -256,11 +259,12 @@
     <button onclick="cancelScale()" style="margin: 0; background: #5a2a10; color: #ffb347; border: none;">Отмена</button>
   </div>
 
-  <!-- КАРТИНКА НА ЭКРАНЕ -->
   <div class="plot-container" id="plotContainer">
     <div class="plot-wrap" id="plotWrap" style="display:none;">
       <img id="plotImg" alt="Light Plot" src="">
-      <div class="plot-overlay" id="plotOverlay"></div>
+      <div class="plot-overlay" id="plotOverlay">
+        <div id="cropBox" class="crop-box"></div>
+      </div>
     </div>
   </div>
 
@@ -270,6 +274,7 @@
     2. Рисуйте линии планов (2 клика или ломаной). Линия тянется за курсором.
     3. ПКМ (правая кнопка) — отменить текущую линию / завершить цепь.
     4. Нажмите <b>✋ Рука</b>, чтобы двигать картинку.
+    5. Нажмите <b>✂️ Обрезать</b>, чтобы выделить нужный кусок картинки.
   </div>
 </div>
 
@@ -303,11 +308,9 @@
   </div>
 </div>
 
-<!-- ОТЧЕТ НА ЭКРАНЕ -->
 <div id="report" class="report-box" style="display:none;"></div>
 
 <script>
-// ==================== БАЗА ДАННЫХ СКЛАДА ====================
 let stockData = [
   { id: 1, length: 0.58, qty: 10 },
   { id: 2, length: 0.93, qty: 10 },
@@ -349,13 +352,18 @@ let dragStartY = 0;
 let currentTranslateX = 0;
 let currentTranslateY = 0;
 
+// Переменные для обрезки
+let isCropping = false;
+let cropStart = null;
+let cropEnd = null;
+
 const overlay = document.getElementById('plotOverlay');
 const plotImg = document.getElementById('plotImg');
 const plotWrap = document.getElementById('plotWrap');
 const plotContainer = document.getElementById('plotContainer');
 const reportContainer = document.getElementById('report');
+const cropBox = document.getElementById('cropBox');
 
-// ==================== МОДАЛЬНОЕ ОКНО ====================
 let modalCallback = null;
 
 function showModal(text, callback) {
@@ -375,7 +383,69 @@ function modalNo() {
   modalCallback = null;
 }
 
-// ==================== ПЕЧАТЬ (ЧЕРЕЗ IFRAME) ====================
+// ==================== ОБРЕЗКА ====================
+function startCrop() {
+  if (!plotImg.src) { alert('Сначала загрузите картинку!'); return; }
+  if (isPanMode) togglePan();
+  if (isSettingScale) cancelScale();
+  
+  isCropping = true;
+  cropStart = null;
+  cropEnd = null;
+  cropBox.style.display = 'none';
+  overlay.classList.add('cropping');
+  document.getElementById('btnCrop').classList.add('active-mode');
+  document.getElementById('scaleInfo').textContent = 'Выделите область для обрезки...';
+}
+
+function applyCrop() {
+  if (!cropStart || !cropEnd) { cancelCrop(); return; }
+  
+  const x1 = Math.min(cropStart.x, cropEnd.x);
+  const y1 = Math.min(cropStart.y, cropEnd.y);
+  const x2 = Math.max(cropStart.x, cropEnd.x);
+  const y2 = Math.max(cropStart.y, cropEnd.y);
+  
+  const w = x2 - x1;
+  const h = y2 - y1;
+  
+  if (w < 10 || h < 10) { alert('Слишком маленькая область'); cancelCrop(); return; }
+  
+  // Создаем canvas для обрезки
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(plotImg, x1, y1, w, h, 0, 0, w, h);
+  
+  // Обновляем картинку
+  plotImg.src = canvas.toDataURL();
+  
+  // Пересчитываем координаты линий и подписей
+  ferms.forEach(f => {
+    if (f.x1 === 0 && f.y1 === 0 && f.x2 === 0 && f.y2 === 0) return;
+    f.x1 -= x1;
+    f.y1 -= y1;
+    f.x2 -= x1;
+    f.y2 -= y1;
+  });
+  
+  cancelCrop();
+  redrawPlot();
+  fitToScreen();
+}
+
+function cancelCrop() {
+  isCropping = false;
+  cropStart = null;
+  cropEnd = null;
+  cropBox.style.display = 'none';
+  overlay.classList.remove('cropping');
+  document.getElementById('btnCrop').classList.remove('active-mode');
+  document.getElementById('scaleInfo').textContent = pixelsPerMeter ? `Масштаб: 1 м = ${Math.round(pixelsPerMeter)} px` : 'Масштаб не задан';
+}
+
+// ==================== ПЕЧАТЬ ====================
 function printReport() {
   if (document.activeElement) document.activeElement.blur();
 
@@ -433,37 +503,34 @@ function printReport() {
         @page { margin: 10mm; size: A4 portrait; }
         body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #fff; color: #000; }
         
-        /* Страница 1: Картинка на весь лист */
         .page-1 {
-          width: 100%;
+          width: 190mm;
           height: 260mm;
           page-break-after: always;
+          position: relative;
+          overflow: hidden;
           display: flex;
           justify-content: center;
           align-items: center;
-          position: relative;
         }
         
-        .img-wrapper {
-          position: relative;
-          width: 100%;
-          height: 100%;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-        }
-
-        /* Принудительно растягиваем картинку на 100% листа */
-        .img-wrapper img {
-          width: 100%;
-          height: 100%;
-          object-fit: fill; /* Растягиваем, игнорируя пропорции */
+        .page-1 img {
+          max-width: 100%;
+          max-height: 100%;
+          width: auto;
+          height: auto;
           display: block;
           filter: grayscale(100%) contrast(120%);
         }
 
-        /* Оверлей с линиями, растянутый ровно по картинке */
-        .img-wrapper .overlay {
+        .img-wrapper {
+          position: relative;
+          display: inline-block;
+          max-width: 100%;
+          max-height: 100%;
+        }
+
+        .overlay {
           position: absolute;
           top: 0; left: 0;
           width: 100%;
@@ -483,14 +550,14 @@ function printReport() {
           background: #fff; 
           color: #000; 
           border: 2px solid #000; 
-          font-size: 16px; 
-          padding: 4px 8px; 
+          font-size: 14px; 
+          padding: 2px 6px; 
           transform: translate(-50%, -50%); 
           white-space: nowrap; 
           font-weight: bold;
+          z-index: 10;
         }
 
-        /* Страница 2: Отчет */
         .page-2 {
           page-break-before: always;
           width: 100%;
@@ -536,7 +603,6 @@ function printReport() {
   };
 }
 
-// ==================== КОПИРОВАНИЕ ОТЧЁТА ====================
 function copyReport(btn) {
   if (reportContainer.style.display === 'none' || !reportContainer.innerHTML) {
     alert('Сначала нажмите "Рассчитать общий список"');
@@ -762,7 +828,7 @@ function togglePan() {
   isPanMode = !isPanMode;
   document.getElementById('btnPan').classList.toggle('active-mode', isPanMode);
   overlay.classList.toggle('panning', isPanMode);
-  if (isPanMode) resetTempState(); 
+  if (isPanMode) { resetTempState(); cancelCrop(); }
 }
 
 // ==================== БЫСТРЫЙ ВВОД ====================
@@ -815,6 +881,7 @@ function setMode(mode) {
   document.getElementById('btnModeMulti').classList.toggle('active-mode', mode === 'multi');
   document.getElementById('btnFinishMulti').style.display = (mode === 'multi') ? 'inline-block' : 'none';
   resetTempState();
+  cancelCrop();
 }
 
 // ==================== ЗАГРУЗКА КАРТИНКИ ====================
@@ -847,6 +914,7 @@ function startScaleSetting() {
   document.getElementById('scaleInfo').textContent = 'Кликните 2 точки для масштаба...';
   document.getElementById('scaleInputPanel').style.display = 'none';
   resetTempState();
+  cancelCrop();
 }
 
 function applyScale() {
@@ -871,6 +939,7 @@ function cancelScale() {
 // ==================== ОТМЕНА ПРАВОЙ КНОПКОЙ ====================
 overlay.addEventListener('contextmenu', function(e) {
   e.preventDefault(); 
+  if (isCropping) { cancelCrop(); return; }
   if (isSettingScale) cancelScale();
   else { 
     if (drawMode === 'multi' && multiPoints.length >= 2) {
@@ -885,11 +954,29 @@ overlay.addEventListener('contextmenu', function(e) {
 // ==================== РЕЗИНКА ====================
 overlay.addEventListener('mousemove', function(e) {
   if (isPanMode) return;
-  if (!plotImg.src || isSettingScale || inputOverlay) return;
+  if (!plotImg.src) return;
   
   const rect = overlay.getBoundingClientRect();
   const x = (e.clientX - rect.left) / zoomLevel;
   const y = (e.clientY - rect.top) / zoomLevel;
+
+  if (isCropping) {
+    if (cropStart) {
+      cropEnd = { x, y };
+      const left = Math.min(cropStart.x, cropEnd.x);
+      const top = Math.min(cropStart.y, cropEnd.y);
+      const width = Math.abs(cropEnd.x - cropStart.x);
+      const height = Math.abs(cropEnd.y - cropStart.y);
+      cropBox.style.display = 'block';
+      cropBox.style.left = left + 'px';
+      cropBox.style.top = top + 'px';
+      cropBox.style.width = width + 'px';
+      cropBox.style.height = height + 'px';
+    }
+    return;
+  }
+
+  if (isSettingScale || inputOverlay) return;
 
   let rb = document.getElementById('rubber-line');
 
@@ -948,6 +1035,9 @@ overlay.addEventListener('mousedown', function(e) {
 });
 overlay.addEventListener('mouseup', function(e) {
   if (isPanMode && e.button === 0) isDragging = false;
+  if (isCropping && e.button === 0 && cropStart && cropEnd) {
+    applyCrop();
+  }
 });
 overlay.addEventListener('mousemove', function(e) {
   if (isPanMode && isDragging) {
@@ -966,6 +1056,14 @@ overlay.addEventListener('click', function(e) {
   const rect = overlay.getBoundingClientRect();
   const x = (e.clientX - rect.left) / zoomLevel;
   const y = (e.clientY - rect.top) / zoomLevel;
+
+  if (isCropping) {
+    if (!cropStart) {
+      cropStart = { x, y };
+      cropEnd = null;
+    }
+    return;
+  }
 
   if (isSettingScale) {
     if (!scaleStart) {
