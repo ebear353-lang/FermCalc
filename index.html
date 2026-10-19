@@ -112,7 +112,6 @@
     pointer-events: none;
   }
   
-  /* Подпись теперь поворачивается вместе с линией */
   .ferm-label {
     position: absolute; background: rgba(42, 20, 8, 0.95); color: #ffe8d0; font-weight: bold;
     font-size: 12px; padding: 2px 6px; border-radius: 3px; border: 1px solid #ff8c00;
@@ -312,6 +311,35 @@
 <div id="report" class="report-box" style="display:none;"></div>
 
 <script>
+// ==================== СОХРАНЕНИЕ СКЛАДА В LOCALSTORAGE ====================
+const STORAGE_KEY = 'ferm_stock_data';
+
+function saveStockToStorage() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stockData));
+  } catch (e) {
+    console.warn('Не удалось сохранить склад в localStorage:', e);
+  }
+}
+
+function loadStockFromStorage() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        stockData = parsed;
+        nextStockId = Math.max(...stockData.map(item => item.id)) + 1;
+        return true;
+      }
+    }
+  } catch (e) {
+    console.warn('Не удалось загрузить склад из localStorage:', e);
+  }
+  return false;
+}
+
+// ==================== БАЗА ДАННЫХ СКЛАДА (ДЕФОЛТ) ====================
 let stockData = [
   { id: 1, length: 0.58, qty: 10 },
   { id: 2, length: 0.93, qty: 10 },
@@ -330,6 +358,9 @@ let stockData = [
   { id: 15, length: 4.0, qty: 10 }
 ];
 let nextStockId = 16;
+
+// Загружаем склад из localStorage при старте (если есть)
+loadStockFromStorage();
 
 let ferms = []; 
 let nextId = 1;
@@ -412,17 +443,14 @@ function applyCrop() {
   
   if (w < 10 || h < 10) { alert('Слишком маленькая область'); cancelCrop(); return; }
   
-  // Создаем canvas для обрезки
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext('2d');
   ctx.drawImage(plotImg, x1, y1, w, h, 0, 0, w, h);
   
-  // Обновляем картинку
   plotImg.src = canvas.toDataURL();
   
-  // Пересчитываем координаты линий и подписей
   ferms.forEach(f => {
     if (f.x1 === 0 && f.y1 === 0 && f.x2 === 0 && f.y2 === 0) return;
     f.x1 -= x1;
@@ -673,7 +701,7 @@ function showCopySuccess(btn) {
   }, 2000);
 }
 
-// ==================== СОХРАНЕНИЕ / ЗАГРУЗКА ====================
+// ==================== СОХРАНЕНИЕ / ЗАГРУЗКА ПРОЕКТА ====================
 function buildProjectData() {
   return {
     stock: stockData,
@@ -741,7 +769,7 @@ function loadProject(event) {
   reader.onload = function(e) {
     try {
       const data = JSON.parse(e.target.result);
-      if (data.stock) { stockData = data.stock; renderStock(); }
+      if (data.stock) { stockData = data.stock; saveStockToStorage(); renderStock(); }
       if (data.ferms) {
         ferms = data.ferms;
         nextId = ferms.length > 0 ? Math.max(...ferms.map(f => f.id)) + 1 : 1;
@@ -864,14 +892,17 @@ function updateStock(index, field, val) {
   const parsed = parseFloat(val);
   if (isNaN(parsed)) return;
   stockData[index][field] = parsed;
+  saveStockToStorage(); // Автосохранение при изменении
 }
 function addStockItem() {
   stockData.push({ id: nextStockId++, length: 1.0, qty: 1 });
   renderStock();
+  saveStockToStorage();
 }
 function removeStock(index) {
   stockData.splice(index, 1);
   renderStock();
+  saveStockToStorage();
 }
 
 // ==================== СМЕНА РЕЖИМА ====================
@@ -1264,8 +1295,6 @@ function redrawPlot() {
     label.className = 'ferm-label';
     label.style.left = midX + 'px';
     label.style.top = midY + 'px';
-    
-    // Подпись поворачивается вместе с линией
     label.style.transform = `translate(-50%, -50%) rotate(${angle}deg)`;
     
     let baseFontSize = 12;
