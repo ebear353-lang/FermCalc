@@ -84,10 +84,10 @@
                 <i class="fa-solid fa-border-all text-slate-400"></i> Сетка
             </button>
             <label class="cursor-pointer bg-darkBorder hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded-md flex items-center gap-2 border border-slate-600/50">
-                <i class="fa-solid fa-file-upload text-blue-400"></i> Подложка
+                <i class="fa-solid fa-file-upload text-blue-400"></i> Lightplot
                 <input type="file" id="bgInput" accept="image/*,application/pdf" class="hidden">
             </label>
-            <button id="btnRemoveBg" class="bg-darkBorder hover:bg-slate-700 text-slate-400 hover:text-red-400 text-xs px-2 py-1.5 rounded-md border border-slate-600/50" title="Удалить подложку">
+            <button id="btnRemoveBg" class="bg-darkBorder hover:bg-slate-700 text-slate-400 hover:text-red-400 text-xs px-2 py-1.5 rounded-md border border-slate-600/50" title="Удалить Lightplot">
                 <i class="fa-solid fa-image-slash"></i>
             </button>
             <button id="btnCalibrate" class="bg-darkBorder hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded-md flex items-center gap-2 border border-slate-600/50">
@@ -412,7 +412,7 @@ function resizeCanvas() {
 
 function loadStock() {
     try { 
-        const s = localStorage.getItem('stock_v29'); 
+        const s = localStorage.getItem('stock_v30'); 
         if(s) {
             let parsed = JSON.parse(s);
             if(parsed.length > 0 && parsed[0].type) stockData = parsed;
@@ -425,7 +425,7 @@ function loadStock() {
 }
 
 function saveStock() { 
-    localStorage.setItem('stock_v29', JSON.stringify(stockData)); 
+    localStorage.setItem('stock_v30', JSON.stringify(stockData)); 
     renderStockUI(); 
     recalculatePhysics(); 
     markDirty(); 
@@ -528,7 +528,6 @@ function solveTrussAssemblyWithPool(target, poolMap) {
         if(greedy.length>0) { greedy.sort((a,b)=>a.length-b.length); symCombos.push(greedy[0]); }
     }
 
-    // НОВАЯ ЛОГИКА ЖАДНОГО ПОДБОРА (Greedy Fallback)
     if(symCombos.length===0) {
         let rem = target;
         let seq = [];
@@ -579,7 +578,6 @@ function recalculatePhysics() {
             o.hasStockError = asm.error;
             o.visualColor = 'silver';
 
-            // ИЗМЕНЕНО: теперь мы собираем текст и сегменты даже при частичной сборке
             if (asm.seq && asm.seq.length > 0) {
                 let hasBlack = false, hasSilver = false;
                 let newSeq = [];
@@ -1371,19 +1369,30 @@ function setupEvents() {
         let rect = canvas.getBoundingClientRect(), mX = e.clientX-rect.left, mY = e.clientY-rect.top;
         let w = {x: (mX-state.viewport.x)/state.viewport.zoom, y: (mY-state.viewport.y)/state.viewport.zoom};
         
-        if(e.shiftKey && ((state.currentTool === 'truss2p' || state.currentTool === 'beam') && state.truss2pStart)) {
-            let dx = w.x - state.truss2pStart.x, dy = w.y - state.truss2pStart.y;
-            let angle = Math.round(Math.atan2(dy, dx) / (Math.PI/4)) * (Math.PI/4);
+        let refP = null;
+        if ((state.currentTool === 'truss2p' || state.currentTool === 'beam') && state.truss2pStart) {
+            refP = state.truss2pStart;
+        } else if (state.currentTool === 'poly' && state.polyPoints.length > 0) {
+            refP = state.polyPoints[state.polyPoints.length - 1];
+        }
+
+        if (refP) {
+            let dx = w.x - refP.x, dy = w.y - refP.y;
+            let angle = Math.atan2(dy, dx);
             let dist = Math.hypot(dx, dy);
-            w.x = state.truss2pStart.x + Math.cos(angle) * dist;
-            w.y = state.truss2pStart.y + Math.sin(angle) * dist;
-        } else if (e.shiftKey && state.currentTool === 'poly' && state.polyPoints.length > 0) {
-            let lastP = state.polyPoints[state.polyPoints.length - 1];
-            let dx = w.x - lastP.x, dy = w.y - lastP.y;
-            let angle = Math.round(Math.atan2(dy, dx) / (Math.PI/4)) * (Math.PI/4);
-            let dist = Math.hypot(dx, dy);
-            w.x = lastP.x + Math.cos(angle) * dist;
-            w.y = lastP.y + Math.sin(angle) * dist;
+
+            if (e.shiftKey) {
+                angle = Math.round(angle / (Math.PI/4)) * (Math.PI/4);
+            }
+
+            let lenM = dist * state.scale;
+            let snapM = Math.round(lenM * 2) / 2;
+            if (Math.abs(lenM - snapM) < 0.2 && snapM > 0) {
+                dist = snapM / state.scale;
+            }
+
+            w.x = refP.x + Math.cos(angle) * dist;
+            w.y = refP.y + Math.sin(angle) * dist;
         }
         
         state.mouseWorld = w;
@@ -1488,7 +1497,7 @@ function setupEvents() {
     document.getElementById('btnDeleteObj')?.addEventListener('click', () => { if(state.selectedObjId) { state.objects=state.objects.filter(o=>o.id!==state.selectedObjId); state.selectedObjId=null; updateProps(); recalculatePhysics(); saveHistory(); markDirty(); }});
     document.getElementById('bgInput')?.addEventListener('change', handleUpload);
     document.getElementById('jsonInput')?.addEventListener('change', handleUpload);
-    document.getElementById('btnRemoveBg')?.addEventListener('click', () => { state.bgImage=null; state.bgDataUrl=null; state.bgWidth=0; state.bgHeight=0; markDirty(); showToast('Подложка удалена'); });
+    document.getElementById('btnRemoveBg')?.addEventListener('click', () => { state.bgImage=null; state.bgDataUrl=null; state.bgWidth=0; state.bgHeight=0; markDirty(); showToast('Lightplot удален'); });
     document.getElementById('btnSaveJSON')?.addEventListener('click', () => { let a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify({scale:state.scale, objects:state.objects, bgDataUrl:state.bgDataUrl, bgWidth:state.bgWidth, bgHeight:state.bgHeight, stockData})], {type:'application/json'})); a.download='stage_project.json'; a.click(); showToast('Сохранено'); });
 
     window.promptTrussModal = (x1,y1,x2,y2, len, type) => {
