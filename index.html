@@ -75,7 +75,7 @@
             </div>
             <div>
                 <h1 class="font-bold text-sm tracking-wide text-white flex items-center gap-2">
-                    Stage Rigging Planner <span class="text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-full font-mono">v11.0 Pro</span>
+                    Stage Rigging Planner <span class="text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-full font-mono">v12.0 Pro</span>
                 </h1>
             </div>
         </div>
@@ -84,7 +84,7 @@
                 <i class="fa-solid fa-border-all text-slate-400"></i> Сетка
             </button>
             <label class="cursor-pointer bg-darkBorder hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded-md flex items-center gap-2 border border-slate-600/50">
-                <i class="fa-solid fa-file-upload text-blue-400"></i> Lightplot
+                <i class="fa-solid fa-file-upload text-blue-400"></i> Подложка
                 <input type="file" id="bgInput" accept="image/*,application/pdf" class="hidden">
             </label>
             <button id="btnRemoveBg" class="bg-darkBorder hover:bg-slate-700 text-slate-400 hover:text-red-400 text-xs px-2 py-1.5 rounded-md border border-slate-600/50" title="Удалить подложку">
@@ -412,8 +412,7 @@ function resizeCanvas() {
 
 function loadStock() {
     try { 
-        // Обновлен ключ для принудительного обновления склада 
-        const s = localStorage.getItem('stock_v21'); 
+        const s = localStorage.getItem('stock_v29'); 
         if(s) {
             let parsed = JSON.parse(s);
             if(parsed.length > 0 && parsed[0].type) stockData = parsed;
@@ -426,7 +425,7 @@ function loadStock() {
 }
 
 function saveStock() { 
-    localStorage.setItem('stock_v21', JSON.stringify(stockData)); 
+    localStorage.setItem('stock_v29', JSON.stringify(stockData)); 
     renderStockUI(); 
     recalculatePhysics(); 
     markDirty(); 
@@ -490,7 +489,7 @@ function findSnapTruss(wx, wy) {
 
 function solveTrussAssemblyWithPool(target, poolMap) {
     let available = Object.keys(poolMap).map(Number).filter(l=>poolMap[l]>0).sort((a,b)=>b-a);
-    if(target <= 0) return {error:false, text:'0м', parts:{}};
+    if(target <= 0) return {error:false, text:'0м', parts:{}, seq:[], missing: 0};
 
     function getCombos(tgt, stock) {
         let res = [];
@@ -529,12 +528,28 @@ function solveTrussAssemblyWithPool(target, poolMap) {
         if(greedy.length>0) { greedy.sort((a,b)=>a.length-b.length); symCombos.push(greedy[0]); }
     }
 
-    if(symCombos.length===0) return {error:true, text:`Нехватка (${target.toFixed(1)}м)`};
+    // НОВАЯ ЛОГИКА ЖАДНОГО ПОДБОРА (Greedy Fallback)
+    if(symCombos.length===0) {
+        let rem = target;
+        let seq = [];
+        let p = {};
+        for(let l of available) {
+            while(poolMap[l]>0 && l<=rem+0.015) {
+                seq.push(l);
+                p[l] = (p[l]||0)+1;
+                poolMap[l]--;
+                rem -= l;
+            }
+        }
+        if(seq.length === 0) return {error:true, text:`Нехватка (${target.toFixed(2)}м)`, parts:{}, seq:[], missing: target};
+        
+        return {error:true, text: seq.map(l=>`${l}м`).join(' + ') + ` + Нехватка (${rem.toFixed(2)}м)`, parts: p, seq: seq, missing: rem};
+    }
     
     symCombos.sort((a,b)=>a.length-b.length);
     let best = symCombos[0], p={};
     best.forEach(l => { p[l]=(p[l]||0)+1; poolMap[l]--; });
-    return {error:false, text: best.map(l=>`${l}м`).join(' + '), parts: p, seq: best};
+    return {error:false, text: best.map(l=>`${l}м`).join(' + '), parts: p, seq: best, missing: 0};
 }
 
 function recalculatePhysics() {
@@ -564,7 +579,8 @@ function recalculatePhysics() {
             o.hasStockError = asm.error;
             o.visualColor = 'silver';
 
-            if (!asm.error && asm.parts) {
+            // ИЗМЕНЕНО: теперь мы собираем текст и сегменты даже при частичной сборке
+            if (asm.seq && asm.seq.length > 0) {
                 let hasBlack = false, hasSilver = false;
                 let newSeq = [];
                 for (let l of asm.seq) {
@@ -588,6 +604,9 @@ function recalculatePhysics() {
                         }
                     }
                 }
+                
+                o.segments = newSeq;
+                o.missing = asm.missing || 0;
 
                 if (reqProfile === 'black_fallback') {
                     if (hasBlack && !hasSilver) o.visualColor = 'black';
@@ -599,13 +618,26 @@ function recalculatePhysics() {
 
                 o.assemblyText = newSeq.map(p => {
                     let suf = '';
-                    if (reqProfile === 'black_fallback') suf = p.t === 'black' ? '(ч)' : (p.t === 'silver' ? '(сер)' : '');
+                    if (reqProfile === 'black_fallback') {
+                        suf = p.t === 'black' ? ' (ч)' : (p.t === 'silver' ? ' (сер)' : '');
+                    } else if (p.t === 'q550') {
+                        suf = ' (Q550)';
+                    } else if (p.t === 't260') {
+                        suf = ' (T260)';
+                    } else if (p.t === 'black') {
+                        suf = ' (ч)';
+                    }
                     return `${p.l}м${suf}`;
                 }).join(' + ');
 
+                if (asm.error) {
+                    o.assemblyText += ` + Нехватка (${asm.missing.toFixed(2)}м)`;
+                }
             } else {
                 o.visualColor = 'error';
-                o.assemblyText = asm.text || 'Нехватка';
+                o.assemblyText = asm.text || `Нехватка (${o.length.toFixed(2)}м)`;
+                o.segments = [];
+                o.missing = o.length;
             }
 
             let sw = o.length * (o.weightPerMeter||12);
@@ -835,7 +867,6 @@ function drawBadge(ctx, x, y, text, isSel, isError=false, isRotated=false, rotAn
 
 function drawBadgeOnCtx(c, x, y, text, isSel, isError, isRotated, rotAngle, printScaleFactor) {
     c.save();
-    // Идеальный "средний" размер плашек для печати
     let fs = 30 / printScaleFactor; 
     let padX = 12 / printScaleFactor;
     let padY = 8 / printScaleFactor;
@@ -850,7 +881,7 @@ function drawBadgeOnCtx(c, x, y, text, isSel, isError, isRotated, rotAngle, prin
         if (ta > Math.PI/2 || ta < -Math.PI/2) ta += Math.PI;
         c.translate(x, y);
         c.rotate(ta);
-        x = 0; y = -h/2 - (18/printScaleFactor);
+        x = 0; y = -h/2 - (24/printScaleFactor);
     }
     
     c.fillStyle = isError ? '#FEE2E2' : '#FFFFFF';
@@ -866,6 +897,73 @@ function drawBadgeOnCtx(c, x, y, text, isSel, isError, isRotated, rotAngle, prin
     c.textAlign = 'center'; c.textBaseline = 'middle';
     c.fillText(text, x, y);
     c.restore();
+}
+
+// НОВАЯ ФУНКЦИЯ ДЕТАЛЬНОЙ ОТРИСОВКИ ФЕРМЫ
+function drawDetailedTruss(c, o, totalLenPx, th, zm, isSelected) {
+    let curX = 0;
+    let pxPerMeter = totalLenPx / o.length;
+    let segments = o.segments || [];
+    
+    segments.forEach((seg, idx) => {
+        let segPx = seg.l * pxPerMeter;
+        let cStyle = COLOR_STYLES[seg.t] || COLOR_STYLES['silver'];
+        
+        c.fillStyle = cStyle.fill;
+        c.strokeStyle = isSelected ? '#3B82F6' : cStyle.stroke;
+        c.lineWidth = (isSelected ? 2.5 : 1.5) / zm;
+        
+        // Полупрозрачный фон (чтобы не было пустой дыры)
+        c.globalAlpha = 0.2;
+        c.fillRect(curX, -th/2, segPx, th);
+        c.globalAlpha = 1.0;
+        
+        // Верхняя и нижняя трубы
+        c.beginPath();
+        c.moveTo(curX, -th/2); c.lineTo(curX + segPx, -th/2);
+        c.moveTo(curX, th/2); c.lineTo(curX + segPx, th/2);
+        c.stroke();
+        
+        // Зигзагообразная перемычка
+        let zigStep = Math.max(th * 0.8, 8/zm);
+        c.beginPath();
+        let up = true;
+        for(let zx = curX; zx < curX + segPx - 1/zm; zx += zigStep) {
+            let nx = Math.min(zx + zigStep, curX + segPx);
+            c.moveTo(zx, up ? -th/2 : th/2);
+            c.lineTo(nx, up ? th/2 : -th/2);
+            up = !up;
+        }
+        c.stroke();
+        
+        // Вертикальный фланец (место стыка)
+        c.lineWidth = (isSelected ? 3.0 : 2.5) / zm;
+        c.beginPath();
+        c.moveTo(curX, -th/2 - 2/zm); c.lineTo(curX, th/2 + 2/zm);
+        c.moveTo(curX + segPx, -th/2 - 2/zm); c.lineTo(curX + segPx, th/2 + 2/zm);
+        c.stroke();
+        
+        curX += segPx;
+    });
+    
+    // Отрисовка нехватки (красный пустой перечеркнутый пунктир)
+    if (o.missing > 0 || segments.length === 0) {
+        let missPx = (o.missing > 0 ? o.missing : o.length) * pxPerMeter;
+        c.fillStyle = 'rgba(239, 68, 68, 0.1)';
+        c.fillRect(curX, -th/2, missPx, th);
+        
+        c.strokeStyle = '#EF4444';
+        c.lineWidth = 2 / zm;
+        c.setLineDash([6/zm, 4/zm]);
+        c.strokeRect(curX, -th/2, missPx, th);
+        c.setLineDash([]);
+        
+        // Красный крест
+        c.beginPath();
+        c.moveTo(curX, -th/2); c.lineTo(curX + missPx, th/2);
+        c.moveTo(curX, th/2); c.lineTo(curX + missPx, -th/2);
+        c.stroke();
+    }
 }
 
 function render(forPrint=false) {
@@ -918,12 +1016,9 @@ function render(forPrint=false) {
         ctx.save(); ctx.translate(e.x1,e.y1); ctx.rotate(a);
         let th = Math.max(0.35/state.scale, 8/zm);
         
-        let cStyle = COLOR_STYLES[t.visualColor] || COLOR_STYLES['silver'];
-        ctx.fillStyle = t.hasStockError ? '#EF4444' : cStyle.fill;
-        ctx.strokeStyle = sel ? '#3B82F6' : cStyle.stroke;
+        // Отрисовка детализированной фермы с сегментами
+        drawDetailedTruss(ctx, t, l, th, zm, sel);
         
-        ctx.fillRect(0, -th/2, l, th);
-        ctx.lineWidth = (sel?2.5:1.5)/zm; ctx.strokeRect(0, -th/2, l, th);
         ctx.restore();
         
         let cx = (e.x1+e.x2)/2, cy = (e.y1+e.y2)/2;
@@ -1047,7 +1142,6 @@ function renderForPrint() {
         maxX = Math.max(maxX, state.bgWidth); maxY = Math.max(maxY, state.bgHeight);
     }
     
-    // Исправленный отступ, чтобы предотвратить появление огромных белых полей
     let pad = 40; 
     
     state.objects.forEach(o => {
@@ -1106,12 +1200,9 @@ function renderForPrint() {
         pctx.save(); pctx.translate(e.x1,e.y1); pctx.rotate(a);
         let th = Math.max(0.35/state.scale, 8/scale);
         
-        let cStyle = COLOR_STYLES[t.visualColor] || COLOR_STYLES['silver'];
-        pctx.fillStyle = t.hasStockError ? '#EF4444' : cStyle.fill;
-        pctx.strokeStyle = cStyle.stroke;
+        // Отрисовка детализированной фермы для печати
+        drawDetailedTruss(pctx, t, l, th, scale, false);
         
-        pctx.fillRect(0, -th/2, l, th);
-        pctx.lineWidth = Math.max(1, 3/scale); pctx.strokeRect(0, -th/2, l, th);
         pctx.restore();
         
         let cx = (e.x1+e.x2)/2, cy = (e.y1+e.y2)/2;
@@ -1128,7 +1219,6 @@ function renderForPrint() {
             pctx.fillStyle = o.isOverloaded ? '#DC2626' : '#B91C1C';
             pctx.beginPath(); pctx.arc(0,0,r,0,Math.PI*2); pctx.fill();
             pctx.strokeStyle='#FFF'; pctx.lineWidth=2/scale; pctx.stroke();
-            // Смещаем текст чуть дальше от точки (32/scale)
             drawBadgeOnCtx(pctx, 0, r + 32/scale, `${o.name||'Точка'} (${Math.round(o.finalLoad)}кг)`, false, o.isOverloaded, false, 0, scale);
         } else if(o.type==='light') {
             let r = Math.max(0.26/state.scale, 5/scale);
@@ -1398,7 +1488,7 @@ function setupEvents() {
     document.getElementById('btnDeleteObj')?.addEventListener('click', () => { if(state.selectedObjId) { state.objects=state.objects.filter(o=>o.id!==state.selectedObjId); state.selectedObjId=null; updateProps(); recalculatePhysics(); saveHistory(); markDirty(); }});
     document.getElementById('bgInput')?.addEventListener('change', handleUpload);
     document.getElementById('jsonInput')?.addEventListener('change', handleUpload);
-    document.getElementById('btnRemoveBg')?.addEventListener('click', () => { state.bgImage=null; state.bgDataUrl=null; state.bgWidth=0; state.bgHeight=0; markDirty(); showToast('Lightplot удален'); });
+    document.getElementById('btnRemoveBg')?.addEventListener('click', () => { state.bgImage=null; state.bgDataUrl=null; state.bgWidth=0; state.bgHeight=0; markDirty(); showToast('Подложка удалена'); });
     document.getElementById('btnSaveJSON')?.addEventListener('click', () => { let a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify({scale:state.scale, objects:state.objects, bgDataUrl:state.bgDataUrl, bgWidth:state.bgWidth, bgHeight:state.bgHeight, stockData})], {type:'application/json'})); a.download='stage_project.json'; a.click(); showToast('Сохранено'); });
 
     window.promptTrussModal = (x1,y1,x2,y2, len, type) => {
@@ -1466,7 +1556,7 @@ function setupEvents() {
         if (state.objects.filter(o=>o.type==='truss2p'||o.type==='truss').length > 0) {
             reportHtml += '<h3 style="margin-top:0;font-weight:bold;font-size:24px;">Отчёт по сборке</h3>';
             state.objects.filter(o=>o.type==='truss2p'||o.type==='truss').forEach(o => {
-                reportHtml += `<div style="font-size:16px; margin-bottom: 8px;">${o.title || 'План'}: ${o.assemblyText || '—'}</div>`;
+                reportHtml += `<div style="font-size:16px; margin-bottom: 8px;">${o.title || 'План'}: ${o.assemblyText || '—'} <b>(Итого: ${o.length.toFixed(2)}м)</b></div>`;
             });
             
             let hasStock = false;
@@ -1552,7 +1642,7 @@ function setupEvents() {
 
     document.getElementById('btnCopyReport')?.addEventListener('click', () => {
         let t="ОТЧЕТ ПО СБОРКЕ\n\n";
-        state.objects.filter(o=>o.type==='truss2p'||o.type==='truss').forEach(o=>t+=`${o.title}: ${o.assemblyText}\n`);
+        state.objects.filter(o=>o.type==='truss2p'||o.type==='truss').forEach(o=>t+=`${o.title}: ${o.assemblyText} (Итого: ${o.length.toFixed(2)}м)\n`);
         t+="\nИтого для склада:\n"; 
         for (let tKey in window.globalStockUsed) {
             let used = Object.keys(window.globalStockUsed[tKey] || {}).sort((a,b)=>b-a);
